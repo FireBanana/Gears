@@ -1,0 +1,66 @@
+// Top-level build file where you can add configuration options common to all sub-projects/modules.
+apply plugin: 'com.android.application'
+
+buildscript {
+    repositories {
+       google()
+       mavenCentral()
+    }
+    dependencies {
+        classpath 'com.android.tools.build:gradle:4.2.0'
+    }
+}
+
+allprojects {
+    repositories {
+        google()
+        mavenCentral()
+    }
+}
+
+task cleanfiles(type: Delete) {
+    delete rootProject.buildDir
+}
+
+android {
+    compileSdkVersion 33
+    ndkVersion '25.1.8937393'
+
+    defaultConfig {
+        applicationId = 'com.example.vrframework'
+        minSdkVersion 14
+        targetSdkVersion 33
+        externalNativeBuild {
+            cmake {
+                arguments '-DANDROID_STL=c++_static'
+            }
+        }
+    }
+    buildTypes {
+        release {
+            minifyEnabled false
+            proguardFiles getDefaultProguardFile('proguard-android.txt'),
+                    'proguard-rules.pro'
+        }
+        debug {
+            sourceSets {
+                main {
+                    manifest.srcFile 'AndroidManifest.xml'
+                    res.srcDir 'res'
+                }
+            }
+        }
+    }
+    externalNativeBuild {
+        cmake {
+            version '3.18.1'
+            path 'CMakeLists.txt'
+        }
+    }
+}
+
+dependencies {
+    implementation fileTree(dir: 'libs', include: ['*.jar'])
+    implementation 'androidx.appcompat:appcompat:1.0.2'
+    implementation 'androidx.constraintlayout:constraintlayout:1.1.3'
+}
