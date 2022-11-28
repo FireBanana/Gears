@@ -33,5 +33,3 @@
 #include <android_native_app_glue.h>
 #include <android/native_window.h>
 #include <jni.h>
-
-#include <vulkan/vulkan.h>

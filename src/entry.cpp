@@ -1,16 +1,16 @@
 #include <android_native_app_glue.h>
-#include <android/log.h>
-#include "pch.h"
 
-#define LOGI(...) ((void)__android_log_print(ANDROID_LOG_INFO, "native-activity", __VA_ARGS__))
+#include "pch.h"
+#include "Logger.h"
+#include "graphics.h"
 
 // -------- Refactor ----------
 
-static void handle_cmd_callback(struct android_app*, int32_t cmd)
+static void handle_cmd_callback(struct android_app* app, int32_t cmd)
 {
     switch (cmd)
     {
-        case APP_CMD_START:   LOGI("OWAIS STARTED APP"); break;
+        case APP_CMD_START: { LOGI("Creating Vulkan"); Gears::Graphics g{ app }; break; }
         case APP_CMD_RESUME:  break;
         case APP_CMD_PAUSE:   break;
         case APP_CMD_STOP:    break;
@@ -49,6 +49,8 @@ void android_main(struct android_app* app)
 
             if(pollSource != nullptr)
                 pollSource->process(app, pollSource);
+
+            
         }
     }
 }
