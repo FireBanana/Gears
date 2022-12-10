@@ -3,6 +3,8 @@ message(STATUS "Detected CMake version is: ${CMAKE_VERSION}")
 
 project(gears)
 
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=gnu++17 -Wall -Werror")
+
 message(STATUS "Project file generation requested")
 message(STATUS "Building from NDK at path: $ENV{ANDROID_NDK_HOME}")
 
@@ -11,7 +13,6 @@ add_executable( GEARS )
 target_sources( GEARS PRIVATE
            src/entry.cpp 
            src/graphics.cpp
-           include/pch.h
            include/graphics.h
            include/logger.h)
 

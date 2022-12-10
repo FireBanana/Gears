@@ -1,6 +1,5 @@
 #include <android_native_app_glue.h>
 
-#include "pch.h"
 #include "Logger.h"
 #include "graphics.h"
 
