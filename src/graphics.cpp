@@ -4,6 +4,7 @@
 #include "Logger.h"
 
 #include <vulkan/vulkan.h>
+#include <vulkan/vulkan_android.h>
 #include <vector>
 #include <type_traits>
 
@@ -21,6 +22,10 @@ Gears::Graphics::Graphics( android_app* app ) :
 
 	auto queueInfo = SetupDeviceQueues();
 	CreateLogicalDevice(queueInfo);
+	CreateCommandBufferPool();
+	CreateSurface(app->window);
+	CachePhysicalDeviceCapabilities();
+	CreateSwapChain();
 }
 
 void Gears::Graphics::EnumerateLayerProperties()
@@ -54,7 +59,7 @@ void Gears::Graphics::EnumerateLayerExtensions()
 		LOGI("Extension Name: %s", i.extensionName);
 	}
 
-	LOGI("Extensions found: %d", count);
+	LOGI("Instance extensions found: %d", count);
 }
 
 void Gears::Graphics::EnumerateDeviceExtensions()
@@ -64,13 +69,13 @@ void Gears::Graphics::EnumerateDeviceExtensions()
 	auto extensions = std::vector<VkExtensionProperties>( count );
 	VK_CALL(vkEnumerateDeviceExtensionProperties(m_PhysicalDevices[0], nullptr, &count, extensions.data()));
 
-	LOGI("Device extensions found: ");
-
 	for (auto& i : extensions)
 	{
 		m_DeviceExtensionNames.push_back(i.extensionName);
 		LOGI("Extension Name: %s", i.extensionName);
 	}
+
+	LOGI("Device extensions found: %d", count);
 }
 
 void Gears::Graphics::EnumeratePhysicalDevices()
@@ -88,7 +93,7 @@ void Gears::Graphics::EnumeratePhysicalDevices()
 	}
 
 	// Cache device properties of main device
-	vkGetPhysicalDeviceProperties(m_PhysicalDevices[0], &m_MainDeviceProperties);
+	vkGetPhysicalDeviceProperties(m_PhysicalDevices[0], &m_MainDeviceProperties);	
 
 	LOGI("Physical devices statistics:");
 	LOGI("Device Name: %s", m_MainDeviceProperties.deviceName);
@@ -100,7 +105,7 @@ VkDeviceQueueCreateInfo Gears::Graphics::SetupDeviceQueues()
 {
 	uint32_t count;
 	const VkQueueFamilyProperties* selectedQueue = nullptr;
-	int selectedQueueIndex = 0;
+	m_SelectedGraphicQueueIndex = 0;
 
 	vkGetPhysicalDeviceQueueFamilyProperties(m_PhysicalDevices[0], &count, nullptr);
 	m_PhysicalQueueProperties = std::vector<VkQueueFamilyProperties>(count);
@@ -117,7 +122,7 @@ VkDeviceQueueCreateInfo Gears::Graphics::SetupDeviceQueues()
 			break;
 		}
 
-		++selectedQueueIndex;
+		++m_SelectedGraphicQueueIndex;
 	}
 
 	if (selectedQueue == nullptr)
@@ -126,10 +131,13 @@ VkDeviceQueueCreateInfo Gears::Graphics::SetupDeviceQueues()
 		return {};
 	}
 
-	VkDeviceQueueCreateInfo queueInfo;
+	static const float qPriorities[] = {1.0f};
+
+	VkDeviceQueueCreateInfo queueInfo{};
 	queueInfo.sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO;
 	queueInfo.queueCount = selectedQueue->queueCount;
-	queueInfo.queueFamilyIndex = selectedQueueIndex;
+	queueInfo.queueFamilyIndex = m_SelectedGraphicQueueIndex;
+	queueInfo.pQueuePriorities = qPriorities;
 
 	return queueInfo;
 }
@@ -139,30 +147,77 @@ void Gears::Graphics::CreateLogicalDevice(VkDeviceQueueCreateInfo queueCreateInf
 	VkDeviceCreateInfo deviceInfo{};
 	VkDeviceQueueCreateInfo queueInfo[] = {queueCreateInfo};
 
+	static const char* extensions[] = { "VK_KHR_swapchain" };
+
 	deviceInfo.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
-	deviceInfo.enabledExtensionCount = m_DeviceExtensionNames.size();
-	deviceInfo.ppEnabledExtensionNames = m_DeviceExtensionNames.data();
-	deviceInfo.enabledLayerCount = static_cast<uint32_t>(m_LayerPropertyNames.size());
-	deviceInfo.ppEnabledLayerNames = m_LayerPropertyNames.data();
+	deviceInfo.enabledExtensionCount = 1;
+	deviceInfo.ppEnabledExtensionNames = extensions;
+	deviceInfo.enabledLayerCount = 0;
+	deviceInfo.ppEnabledLayerNames = nullptr;
 	deviceInfo.pQueueCreateInfos = queueInfo;
 	deviceInfo.queueCreateInfoCount = 1;
 
 	VK_CALL(vkCreateDevice(m_PhysicalDevices[0], &deviceInfo, nullptr, &m_Device));
 }
 
+void Gears::Graphics::CreateCommandBufferPool()
+{
+	constexpr int COMMAND_BUFFER_SIZE = 1;
+
+	VkCommandPoolCreateInfo createInfo{};
+	createInfo.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
+	createInfo.queueFamilyIndex = m_SelectedGraphicQueueIndex;
+	
+	VK_CALL(vkCreateCommandPool(m_Device, &createInfo, nullptr, &m_CommandPool));
+
+	VkCommandBufferAllocateInfo allocateInfo{};
+	allocateInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
+	allocateInfo.commandBufferCount = COMMAND_BUFFER_SIZE;
+	allocateInfo.commandPool = m_CommandPool;
+	allocateInfo.level = VkCommandBufferLevel::VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+
+	std::vector<VkCommandBuffer> uCommandBufferList(COMMAND_BUFFER_SIZE);
+	
+	VK_CALL(vkAllocateCommandBuffers(m_Device, &allocateInfo, uCommandBufferList.data()));
+	/* TODO: Test here... */
+}
+
+void Gears::Graphics::CreateSwapChain()
+{
+	VkSwapchainCreateInfoKHR info{};
+	info.sType = VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR;
+	info.surface = m_Surface;
+	info.minImageCount = m_SurfaceCapabilities.minImageCount;
+	info.imageFormat = VkFormat::VK_FORMAT_R8G8B8A8_UINT;
+	info.imageColorSpace = VkColorSpaceKHR::VK_COLORSPACE_SRGB_NONLINEAR_KHR;
+	info.imageExtent = m_SurfaceCapabilities.currentExtent;
+	info.imageArrayLayers = 1; // 2 for Stereo Applications
+	info.imageUsage = 
+		VkImageUsageFlagBits::VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | 
+		VkImageUsageFlagBits::VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT;
+	info.imageSharingMode = VkSharingMode::VK_SHARING_MODE_EXCLUSIVE;
+	info.clipped = VK_FALSE;
+
+	VK_CALL(vkCreateSwapchainKHR(m_Device, &info, nullptr, &m_Swapchain));
+}
+
+void Gears::Graphics::CachePhysicalDeviceCapabilities()
+{
+	VK_CALL(vkGetPhysicalDeviceSurfaceCapabilitiesKHR(m_PhysicalDevices[0], m_Surface, &m_SurfaceCapabilities));
+}
+
 void Gears::Graphics::CreateInstance()
 {
-	m_LayerExtensionNames.push_back("VK_EXT_debug_report");
-
-	static const char* layers[] = { "VK_LAYER_KHRONOS_validation" };
+	static const char* extensions[] = { "VK_KHR_surface", "VK_KHR_android_surface", "VK_EXT_debug_report" };
+	static const char* layers[]		= { "VK_LAYER_KHRONOS_validation" };
 
 	VkInstanceCreateInfo info{};
 	info.sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO;
 	info.pNext = nullptr;
 	info.enabledLayerCount = 1;
 	info.ppEnabledLayerNames = layers;
-	info.enabledExtensionCount = static_cast<uint32_t>( m_LayerExtensionNames.size() );
-	info.ppEnabledExtensionNames = m_LayerExtensionNames.data();
+	info.enabledExtensionCount = 3;
+	info.ppEnabledExtensionNames = extensions;
 
 	VK_CALL(vkCreateInstance(&info, nullptr, &m_VkInstance));
 }
@@ -188,18 +243,11 @@ void Gears::Graphics::SetupDebugCallbacks()
 	VK_CALL(vkCreateDebugReportCallbackEXT(m_VkInstance, &callbackCreateInfo, nullptr, &callback));
 }
 
+void Gears::Graphics::CreateSurface(ANativeWindow* nativeWindow)
+{
+    VkAndroidSurfaceCreateInfoKHR surfaceCreateInfo = {};
+    surfaceCreateInfo.sType = VK_STRUCTURE_TYPE_ANDROID_SURFACE_CREATE_INFO_KHR;
+	surfaceCreateInfo.window = nativeWindow;
 
-//TODO: Iniitalize in APP_CMD_INIT_WINDOW
-//void Graphics::CreateSurface(ANativeWindow* nativeWindow, VkInstance& instance)
-//{
-//    VkSurfaceKHR surface;
-
-//    VkAndroidSurfaceCreateInfoKHR surfaceCreateInfo = {};
-//    surfaceCreateInfo.sType = VK_STRUCTURE_TYPE_ANDROID_SURFACE_CREATE_INFO_KHR;
-//    surfaceCreateInfo.window = nativeWindow;
-
-//    if (vkCreateAndroidSurfaceKHR(instance, &surfaceCreateInfo, NULL, &surface) != VK_SUCCESS)
-//    {
-//        // Log: Error has occured.
-//    }
-//}
+	VK_CALL(vkCreateAndroidSurfaceKHR(m_VkInstance, &surfaceCreateInfo, NULL, &m_Surface));
+}

@@ -16,6 +16,6 @@ inline VKAPI_ATTR VkBool32 VKAPI_CALL DebugReportCallback(
     const char* pMessage,
     void* pUserData)
 {
-    LOGI("VULKAN: %s", pMessage);
+    LOGI("GearsError::VULKAN: %s", pMessage);
     return VK_FALSE;
 }

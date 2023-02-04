@@ -9,7 +9,8 @@ static void handle_cmd_callback(struct android_app* app, int32_t cmd)
 {
     switch (cmd)
     {
-        case APP_CMD_START: { LOGI("Creating Vulkan"); Gears::Graphics g{ app }; break; }
+        case APP_CMD_INIT_WINDOW: { LOGI("Creating Vulkan"); Gears::Graphics g{ app }; break; }
+        case APP_CMD_START:   break;
         case APP_CMD_RESUME:  break;
         case APP_CMD_PAUSE:   break;
         case APP_CMD_STOP:    break;
