@@ -1,3 +1,4 @@
+.vscode/
 build/
 gradle-files/.cxx
 gradle-files/.gradle

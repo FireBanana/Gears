@@ -1,5 +1,5 @@
 // Top-level build file where you can add configuration options common to all sub-projects/modules.
-apply plugin: 'com.android.application'
+apply plugin: 'com.android.library'
 
 buildscript {
     repositories {
@@ -27,7 +27,6 @@ android {
     ndkVersion '25.1.8937393'
 
     defaultConfig {
-        applicationId = 'com.example.vrframework'
         minSdkVersion 14
         targetSdkVersion 33
         externalNativeBuild {
@@ -54,7 +53,7 @@ android {
     }
     externalNativeBuild {
         cmake {
-            version '3.25.0'
+            version '3.27.0'
             path 'CMakeLists.txt'
         }
     }
