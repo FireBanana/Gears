@@ -21,6 +21,7 @@ set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=gnu++17 -Wall -Werror")
 add_library(native-activity SHARED ../src/entry.cpp)
 
 include_directories(native-activity ../include/)
+include_directories(native-activity "C:/Program Files/RenderDocForMetaQuest/")
 
 #target_include_directories(native-activity PRIVATE
 #    ${ANDROID_NDK_FMT}/sources/android/native_app_glue)
@@ -40,6 +41,7 @@ target_link_libraries(native-activity
     EGL
     GLESv1_CM
     GLESv3
+    dl
     #libvulkan.so
     #vk_validation
     #vk_validation_src

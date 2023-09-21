@@ -1,18 +1,20 @@
 #include <Logger.h>
 #include <EGL/egl.h>
 #include <GLES3/gl3.h>
+#include <GLES3/gl31.h>
+#include <GLES3/gl32.h>
 #include <thread>
 #include <mutex>
 #include <queue>
 #include <chrono>
 #include <functional>
+#include <renderdoc_app.h>
+#include <dlfcn.h>
 
-struct MutexHandle 
-{
-	std::mutex* mutex;
-};
+#define GL() LOGI("Gears:: GL_CHECK at line %d = %d", __LINE__ , glGetError());
 
 GLuint						   mFb;
+EGLContext					   mUnityContext;
 std::mutex					   mDefaultMutex;
 
 std::queue<std::function<void()>> mEventQueue;
@@ -22,6 +24,19 @@ int			  mResultArraySize;
 int			  mCurrentArrayIndex = 0;
 
 using namespace std::chrono_literals;
+
+RENDERDOC_API_1_1_2* rdoc_api = nullptr;
+
+void loadRenderDoc()
+{
+	if (void* mod = dlopen("libVkLayer_GLES_RenderDoc.so", RTLD_NOW | RTLD_NOLOAD))
+	{
+		pRENDERDOC_GetAPI RENDERDOC_GetAPI = (pRENDERDOC_GetAPI)dlsym(mod, "RENDERDOC_GetAPI");
+		int ret = RENDERDOC_GetAPI(eRENDERDOC_API_Version_1_1_2, (void**)&rdoc_api);
+
+		if(ret != 1) LOGI("Gears:: Error, renderdoc not loaded");
+	}
+}
 
 void initEgl()
 {
@@ -41,6 +56,11 @@ void initEgl()
 	EGLConfig eglConfig;
 	EGLint numConfigs;
 
+	if (eglInitialize(display, nullptr, nullptr) != EGL_TRUE)
+	{
+		LOGI("Gears:: Error when initializing egl");
+	}
+
 	if (!eglChooseConfig(display, eglConfigAttribs, &eglConfig, 1, &numConfigs))
 	{
 		LOGI("Gears:: Problem when choosing config");
@@ -52,7 +72,7 @@ void initEgl()
 		EGL_CONTEXT_CLIENT_VERSION, 3, EGL_NONE
 	};
 
-	auto context = eglCreateContext(display, eglConfig, EGL_NO_CONTEXT, contextAttribs);
+	auto context = eglCreateContext(display, eglConfig, mUnityContext, contextAttribs);
 
 	if (context == EGL_NO_CONTEXT)
 	{
@@ -87,8 +107,13 @@ void initEgl()
 
 void createDefaultFramebuffer()
 {
+	GL();
 	glGenFramebuffers(1, &mFb);
+	GL();
 	glBindFramebuffer(GL_FRAMEBUFFER, mFb);
+	GL();
+	glViewport(0, 0, 64, 64);
+	GL();
 	GLenum attachments[] = { GL_COLOR_ATTACHMENT0 };
 	glDrawBuffers(1, attachments);
 }
@@ -100,43 +125,79 @@ extern "C" void createTexture()
 
 	auto fn = [&]()
 	{
+
+		if (rdoc_api) rdoc_api->StartFrameCapture(NULL, NULL);
+
 		GLuint texture;
 
+		GL();
 		glGenTextures(1, &texture);
+		GL();
 		glBindTexture(GL_TEXTURE_2D, texture);
 
+		GL();
+		glTexStorage2D(GL_TEXTURE_2D, 1, GL_RGBA8, 64, 64);
+		GL();
 		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_R, GL_CLAMP_TO_EDGE);
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_BASE_LEVEL, 0);
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAX_LEVEL, 0);
 
-		glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, 1024, 1024, 0, GL_RGB, GL_UNSIGNED_BYTE, nullptr);
-
+		GL();
+		glBindFramebuffer(GL_FRAMEBUFFER, mFb);
+		GL();
 		glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, texture, 0);
+	
+		GL();
+		auto status = glCheckFramebufferStatus(GL_FRAMEBUFFER);
 
-		glClearColor(0, 1, 0, 1);
+		switch (status)
+		{
+			case GL_FRAMEBUFFER_UNDEFINED: LOGI("Gears:: Error - GL_FRAMEBUFFER_UNDEFINED"); break;
+			case GL_FRAMEBUFFER_INCOMPLETE_ATTACHMENT: LOGI("Gears:: Error - GL_FRAMEBUFFER_INCOMPLETE_ATTACHMENT"); break;
+			case GL_FRAMEBUFFER_INCOMPLETE_MISSING_ATTACHMENT: LOGI("Gears:: Error - GL_FRAMEBUFFER_INCOMPLETE_MISSING_ATTACHMENT"); break;
+			case GL_FRAMEBUFFER_UNSUPPORTED: LOGI("Gears:: Error - GL_FRAMEBUFFER_UNSUPPORTED"); break;
+			case GL_FRAMEBUFFER_INCOMPLETE_MULTISAMPLE: LOGI("Gears:: Error - GL_FRAMEBUFFER_INCOMPLETE_MULTISAMPLE"); break;
+			case GL_FRAMEBUFFER_COMPLETE: LOGI("Gears:: Framebuffer complete"); break;
+			default: LOGI("Gears Error:: Uknown Framebuffer error"); break;
+		}
+
+		glClearColor(1.0f, 0.0f, 0.0f, 1.0f);
 		glClear(GL_COLOR_BUFFER_BIT);
 
+		glBindTexture(GL_TEXTURE_2D, 0);
+		glBindFramebuffer(GL_FRAMEBUFFER, 0);
+
+		auto fence = glFenceSync(GL_SYNC_GPU_COMMANDS_COMPLETE, 0);
+
+		if (glClientWaitSync(fence, 0, GL_TIMEOUT_IGNORED) != GL_CONDITION_SATISFIED)
+		{
+			LOGI("Gears:: Error, wait failed");
+		}
+
+		LOGI("Gears:: Texture created with id %d", (int)texture);
 		mResultArray[mCurrentArrayIndex++] = texture;
 
-		LOGI("Gears:: Texture created");
+		glDeleteSync(fence);
+
+		if (rdoc_api) rdoc_api->EndFrameCapture(NULL, NULL);
 	};
 
 	LOGI("Gears:: Pushing fn to queue");
 	mEventQueue.push(fn);
 }
 
-extern "C" void registerMutex(MutexHandle* handle)
+extern "C" void lockMutex()
 {
-	handle->mutex = &mDefaultMutex;
+	mDefaultMutex.lock();
 }
 
-extern "C" void lockMutex(MutexHandle* handle)
+extern "C" void unlockMutex()
 {
-	handle->mutex->lock();
-}
-
-extern "C" void unlockMutex(MutexHandle* handle)
-{
-	handle->mutex->unlock();
+	mDefaultMutex.unlock();
 }
 
 extern "C" void registerResultArray(unsigned int* resultArray, int size)
@@ -147,11 +208,14 @@ extern "C" void registerResultArray(unsigned int* resultArray, int size)
 
 extern "C" void startGearEngine()
 {
+	mUnityContext = eglGetCurrentContext();
+
 	auto thread = std::thread([]()
 	{
 		LOGI("Gears:: Starting thread");
 
 		initEgl();
+		loadRenderDoc();
 		createDefaultFramebuffer();
 
 		LOGI("Gears:: Starting loop");
