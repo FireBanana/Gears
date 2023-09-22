@@ -21,7 +21,6 @@ std::queue<std::function<void()>> mEventQueue;
 
 unsigned int* mResultArray;
 int			  mResultArraySize;
-int			  mCurrentArrayIndex = 0;
 
 using namespace std::chrono_literals;
 
@@ -105,6 +104,24 @@ void initEgl()
 	}
 }
 
+GLenum getGlTextureType(int type)
+{
+	switch (type)
+	{
+		case 8: return GL_RGBA8;
+		default: LOGI("Gears:: Texture format is not implmented in library"); return GL_RGBA8;
+	};
+}
+
+GLenum getGlTextureFormat(int type)
+{
+	switch (type)
+	{
+		case 8: return GL_RGBA;
+		default: LOGI("Gears:: Texture format is not implmented in library"); return GL_RGBA;
+	};
+}
+
 void createDefaultFramebuffer()
 {
 	GL();
@@ -118,14 +135,13 @@ void createDefaultFramebuffer()
 	glDrawBuffers(1, attachments);
 }
 
-extern "C" void createTexture()
+extern "C" void createTexture(int size, int textureType, int width, int height, uint8_t* bytes)
 {
 	LOGI("Gears:: Start pushing fn to queue");
 	std::lock_guard<std::mutex> guard(mDefaultMutex);
 
-	auto fn = [&]()
+	auto fn = [&, textureType, width, height, bytes]()
 	{
-
 		if (rdoc_api) rdoc_api->StartFrameCapture(NULL, NULL);
 
 		GLuint texture;
@@ -136,7 +152,10 @@ extern "C" void createTexture()
 		glBindTexture(GL_TEXTURE_2D, texture);
 
 		GL();
-		glTexStorage2D(GL_TEXTURE_2D, 1, GL_RGBA8, 64, 64);
+		LOGI("Gears::w: %d h: %d", width, height);
+		glTexStorage2D(GL_TEXTURE_2D, 1, getGlTextureType(textureType), width, height);
+		GL();
+		glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, width, height, getGlTextureFormat(textureType), GL_UNSIGNED_BYTE, bytes);
 		GL();
 		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
 		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
@@ -146,40 +165,34 @@ extern "C" void createTexture()
 		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_BASE_LEVEL, 0);
 		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAX_LEVEL, 0);
 
-		GL();
-		glBindFramebuffer(GL_FRAMEBUFFER, mFb);
-		GL();
-		glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, texture, 0);
+		//GL();
+		//glBindFramebuffer(GL_FRAMEBUFFER, mFb);
+		//GL();
+		//glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, texture, 0);
 	
 		GL();
-		auto status = glCheckFramebufferStatus(GL_FRAMEBUFFER);
+		//auto status = glCheckFramebufferStatus(GL_FRAMEBUFFER);
 
-		switch (status)
-		{
-			case GL_FRAMEBUFFER_UNDEFINED: LOGI("Gears:: Error - GL_FRAMEBUFFER_UNDEFINED"); break;
-			case GL_FRAMEBUFFER_INCOMPLETE_ATTACHMENT: LOGI("Gears:: Error - GL_FRAMEBUFFER_INCOMPLETE_ATTACHMENT"); break;
-			case GL_FRAMEBUFFER_INCOMPLETE_MISSING_ATTACHMENT: LOGI("Gears:: Error - GL_FRAMEBUFFER_INCOMPLETE_MISSING_ATTACHMENT"); break;
-			case GL_FRAMEBUFFER_UNSUPPORTED: LOGI("Gears:: Error - GL_FRAMEBUFFER_UNSUPPORTED"); break;
-			case GL_FRAMEBUFFER_INCOMPLETE_MULTISAMPLE: LOGI("Gears:: Error - GL_FRAMEBUFFER_INCOMPLETE_MULTISAMPLE"); break;
-			case GL_FRAMEBUFFER_COMPLETE: LOGI("Gears:: Framebuffer complete"); break;
-			default: LOGI("Gears Error:: Uknown Framebuffer error"); break;
-		}
-
-		glClearColor(1.0f, 0.0f, 0.0f, 1.0f);
-		glClear(GL_COLOR_BUFFER_BIT);
+		//glClearColor(1.0f, 0.0f, 0.0f, 1.0f);
+		//glClear(GL_COLOR_BUFFER_BIT);
 
 		glBindTexture(GL_TEXTURE_2D, 0);
-		glBindFramebuffer(GL_FRAMEBUFFER, 0);
+		//glBindFramebuffer(GL_FRAMEBUFFER, 0);
 
 		auto fence = glFenceSync(GL_SYNC_GPU_COMMANDS_COMPLETE, 0);
 
-		if (glClientWaitSync(fence, 0, GL_TIMEOUT_IGNORED) != GL_CONDITION_SATISFIED)
-		{
-			LOGI("Gears:: Error, wait failed");
-		}
+		glClientWaitSync(fence, 0, GL_TIMEOUT_IGNORED);
 
 		LOGI("Gears:: Texture created with id %d", (int)texture);
-		mResultArray[mCurrentArrayIndex++] = texture;
+		
+		for (int i = 0; i < mResultArraySize; ++i)
+		{
+			if (mResultArray[i] == 0)
+			{
+				mResultArray[i] = texture;
+				break;
+			}
+		}
 
 		glDeleteSync(fence);
 
@@ -200,7 +213,7 @@ extern "C" void unlockMutex()
 	mDefaultMutex.unlock();
 }
 
-extern "C" void registerResultArray(unsigned int* resultArray, int size)
+extern "C" void registerResultArray(uint32_t* resultArray, int size)
 {
 	mResultArray = resultArray;
 	mResultArraySize = size;
@@ -209,6 +222,7 @@ extern "C" void registerResultArray(unsigned int* resultArray, int size)
 extern "C" void startGearEngine()
 {
 	mUnityContext = eglGetCurrentContext();
+	LOGI("Gears:: Got unity context");
 
 	auto thread = std::thread([]()
 	{
