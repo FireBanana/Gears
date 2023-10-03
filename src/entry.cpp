@@ -13,14 +13,20 @@
 
 #define GL() LOGI("Gears:: GL_CHECK at line %d = %d", __LINE__ , glGetError());
 
+struct Resource
+{
+	uint32_t id;
+	uint32_t textureId;
+};
+
 GLuint						   mFb;
 EGLContext					   mUnityContext;
 std::mutex					   mDefaultMutex;
 
 std::queue<std::function<void()>> mEventQueue;
 
-unsigned int* mResultArray;
-int			  mResultArraySize;
+Resource*					   mResultArray;
+int							   mResultArraySize;
 
 using namespace std::chrono_literals;
 
@@ -135,12 +141,12 @@ void createDefaultFramebuffer()
 	glDrawBuffers(1, attachments);
 }
 
-extern "C" void createTexture(int size, int textureType, int width, int height, uint8_t* bytes)
+extern "C" void createTexture(uint32_t uniqueId, int textureType, int width, int height, uint8_t* bytes)
 {
 	LOGI("Gears:: Start pushing fn to queue");
 	std::lock_guard<std::mutex> guard(mDefaultMutex);
 
-	auto fn = [&, textureType, width, height, bytes]()
+	auto fn = [&, uniqueId, textureType, width, height, bytes]()
 	{
 		if (rdoc_api) rdoc_api->StartFrameCapture(NULL, NULL);
 
@@ -164,20 +170,9 @@ extern "C" void createTexture(int size, int textureType, int width, int height, 
 		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_R, GL_CLAMP_TO_EDGE);
 		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_BASE_LEVEL, 0);
 		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAX_LEVEL, 0);
-
-		//GL();
-		//glBindFramebuffer(GL_FRAMEBUFFER, mFb);
-		//GL();
-		//glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, texture, 0);
 	
 		GL();
-		//auto status = glCheckFramebufferStatus(GL_FRAMEBUFFER);
-
-		//glClearColor(1.0f, 0.0f, 0.0f, 1.0f);
-		//glClear(GL_COLOR_BUFFER_BIT);
-
 		glBindTexture(GL_TEXTURE_2D, 0);
-		//glBindFramebuffer(GL_FRAMEBUFFER, 0);
 
 		auto fence = glFenceSync(GL_SYNC_GPU_COMMANDS_COMPLETE, 0);
 
@@ -187,9 +182,10 @@ extern "C" void createTexture(int size, int textureType, int width, int height, 
 		
 		for (int i = 0; i < mResultArraySize; ++i)
 		{
-			if (mResultArray[i] == 0)
+			if (mResultArray[i].id == 0)
 			{
-				mResultArray[i] = texture;
+				mResultArray[i].id = uniqueId;
+				mResultArray[i].textureId = texture;
 				break;
 			}
 		}
@@ -203,17 +199,17 @@ extern "C" void createTexture(int size, int textureType, int width, int height, 
 	mEventQueue.push(fn);
 }
 
-extern "C" void lockMutex()
+extern "C" void lockMutex() noexcept
 {
 	mDefaultMutex.lock();
 }
 
-extern "C" void unlockMutex()
+extern "C" void unlockMutex() noexcept
 {
 	mDefaultMutex.unlock();
 }
 
-extern "C" void registerResultArray(uint32_t* resultArray, int size)
+extern "C" void registerResultArray(Resource* resultArray, int size)
 {
 	mResultArray = resultArray;
 	mResultArraySize = size;
