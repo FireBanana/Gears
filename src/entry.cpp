@@ -10,6 +10,8 @@
 #include <functional>
 #include <renderdoc_app.h>
 #include <dlfcn.h>
+#include <IUnityInterface.h>
+#include <IUnityGraphics.h>
 
 #define GL() LOGI("Gears:: GL_CHECK at line %d = %d", __LINE__ , glGetError());
 
@@ -114,7 +116,9 @@ GLenum getGlTextureType(int type)
 {
 	switch (type)
 	{
-		case 8: return GL_RGBA8;
+		case 8:   return GL_RGBA8;
+		case 129: return GL_COMPRESSED_RGBA_ASTC_4x4; //Unity: RGBA_ASTC4X4_SRGB
+		case 130: return GL_COMPRESSED_RGBA_ASTC_4x4; //Unity: RGBA_ASTC4X4_UNorm
 		default: LOGI("Gears:: Texture format is not implmented in library"); return GL_RGBA8;
 	};
 }
@@ -123,7 +127,9 @@ GLenum getGlTextureFormat(int type)
 {
 	switch (type)
 	{
-		case 8: return GL_RGBA;
+		case 8:   return GL_RGBA;
+		case 129: return GL_RGBA; //Unity: RGBA_ASTC4X4_SRGB
+		case 130: return GL_RGBA; //Unity: RGBA_ASTC4X4_UNorm
 		default: LOGI("Gears:: Texture format is not implmented in library"); return GL_RGBA;
 	};
 }
@@ -161,7 +167,20 @@ extern "C" void createTexture(uint32_t uniqueId, int textureType, int width, int
 		LOGI("Gears::w: %d h: %d", width, height);
 		glTexStorage2D(GL_TEXTURE_2D, 1, getGlTextureType(textureType), width, height);
 		GL();
-		glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, width, height, getGlTextureFormat(textureType), GL_UNSIGNED_BYTE, bytes);
+
+		auto type = getGlTextureType(textureType);
+		auto imageSize = 0;
+
+		if (type == GL_COMPRESSED_RGBA_ASTC_4x4)
+		{
+			imageSize = ceil(width / 4.0f) * ceil(height / 4.0f) * 16.0f;
+			glCompressedTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, width, height, GL_COMPRESSED_RGBA_ASTC_4x4, imageSize, bytes);
+		}
+		else
+		{
+			glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, width, height, getGlTextureFormat(textureType), GL_UNSIGNED_BYTE, bytes);
+		}		
+		
 		GL();
 		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
 		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
@@ -217,8 +236,18 @@ extern "C" void registerResultArray(Resource* resultArray, int size)
 
 extern "C" void startGearEngine()
 {
-	mUnityContext = eglGetCurrentContext();
-	LOGI("Gears:: Got unity context");
+	auto context = eglGetCurrentContext();
+
+	if (context == EGL_NO_CONTEXT)
+	{
+		LOGI("Gears:: No current context found.");
+	}
+	else
+	{
+		LOGI("Gears:: Context found");
+	}
+
+	mUnityContext = context;
 
 	auto thread = std::thread([]()
 	{
@@ -257,3 +286,18 @@ extern "C" void startGearEngine()
 
 	thread.detach();
 }
+
+//================ UNITY SPECIFIC ====================
+
+static void UNITY_INTERFACE_API OnRenderEvent(int eventID)
+{
+	startGearEngine();
+}
+
+extern "C" UnityRenderingEvent UNITY_INTERFACE_EXPORT UNITY_INTERFACE_API
+startEngine()
+{
+	return OnRenderEvent;
+}
+
+//====================================================

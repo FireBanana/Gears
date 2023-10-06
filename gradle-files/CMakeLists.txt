@@ -22,6 +22,7 @@ add_library(native-activity SHARED ../src/entry.cpp)
 
 include_directories(native-activity ../include/)
 include_directories(native-activity "C:/Program Files/RenderDocForMetaQuest/")
+include_directories(native-activity "C:/Program Files/Unity/Hub/Editor/2021.3.15f1/Editor/Data/PluginAPI")
 
 #target_include_directories(native-activity PRIVATE
 #    ${ANDROID_NDK_FMT}/sources/android/native_app_glue)

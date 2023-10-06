@@ -15,6 +15,7 @@ target_sources( GEARS PRIVATE
            include/logger.h)
 
 target_include_directories( GEARS PRIVATE "C:/Program Files/RenderDocForMetaQuest/" ) 
+target_include_directories( GEARS PRIVATE "C:/Program Files/Unity/Hub/Editor/2021.3.15f1/Editor/Data/PluginAPI" ) 
 target_include_directories( GEARS PRIVATE "$ENV{ANDROID_NDK_HOME}/sources/android/" ) 
 target_include_directories( GEARS PRIVATE "$ENV{ANDROID_NDK_HOME}/toolchains/llvm/prebuilt/windows-x86_64/sysroot/usr/include/" )
 target_include_directories( GEARS PRIVATE include/ )
