@@ -15,6 +15,45 @@
 
 #define GL() LOGI("Gears:: GL_CHECK at line %d = %d", __LINE__ , glGetError());
 
+const char* vertexSource = R"(
+#version 320 es
+precision mediump float;
+out vec2 uv;
+
+void main() 
+{
+    vec2 vertices[6];
+    vertices[0] = vec2(-1.0, -1.0);
+    vertices[1] = vec2( -1.0, 1.0);
+    vertices[2] = vec2(1.0,  1.0);
+    vertices[3] = vec2(-1.0,  -1.0);
+    vertices[4] = vec2( 1.0, 1.0);
+    vertices[5] = vec2( 1.0,  -1.0);
+    
+    gl_Position = vec4(vertices[gl_VertexID], 0.0, 1.0);
+    vec2 texCoord = (vertices[gl_VertexID] + 1.0) * 0.5;
+    
+    uv = texCoord;
+}
+)";
+
+const char* fragmentSource = R"(
+#version 320 es
+precision mediump float;
+
+uniform sampler2D sourceTex;
+
+in vec2 uv;
+out vec4 color;
+
+void main() 
+{
+	vec4 img = texture(sourceTex, uv);
+	vec3 col = pow(img.rgb, vec3(2.2));
+    color = vec4(col, img.a);
+}
+)";
+
 struct Resource
 {
 	uint32_t id;
@@ -22,6 +61,7 @@ struct Resource
 };
 
 GLuint						   mFb;
+GLuint						   mShaderProg;
 EGLContext					   mUnityContext;
 std::mutex					   mDefaultMutex;
 
@@ -112,6 +152,87 @@ void initEgl()
 	}
 }
 
+GLuint createShaderProgram(const char* vertexSource, const char* fragmentSource) {
+	GLuint vertexShader, fragmentShader, shaderProgram;
+
+	LOGI("Gears:: Creating shaders");
+
+	// Create and compile the vertex shader.
+	vertexShader = glCreateShader(GL_VERTEX_SHADER);
+	glShaderSource(vertexShader, 1, &vertexSource, NULL);
+	glCompileShader(vertexShader);
+
+	// Check the vertex shader compilation status.
+	GLint compileStatus;
+	glGetShaderiv(vertexShader, GL_COMPILE_STATUS, &compileStatus);
+	if (compileStatus != GL_TRUE) {
+		GLint infoLogLength;
+		glGetShaderiv(vertexShader, GL_INFO_LOG_LENGTH, &infoLogLength);
+		char* infoLog = new char[infoLogLength + 1];
+		glGetShaderInfoLog(vertexShader, infoLogLength, NULL, infoLog);
+
+		LOGI("Gears::(vertex) %s", infoLog);
+
+		// Handle shader compilation error here.
+		delete[] infoLog;
+		glDeleteShader(vertexShader);
+		return 0;
+	}
+
+	// Create and compile the fragment shader.
+	fragmentShader = glCreateShader(GL_FRAGMENT_SHADER);
+	glShaderSource(fragmentShader, 1, &fragmentSource, NULL);
+	glCompileShader(fragmentShader);
+
+	// Check the fragment shader compilation status.
+	glGetShaderiv(fragmentShader, GL_COMPILE_STATUS, &compileStatus);
+	if (compileStatus != GL_TRUE) {
+		GLint infoLogLength;
+		glGetShaderiv(fragmentShader, GL_INFO_LOG_LENGTH, &infoLogLength);
+		char* infoLog = new char[infoLogLength + 1];
+		glGetShaderInfoLog(fragmentShader, infoLogLength, NULL, infoLog);
+
+		LOGI("Gears::(fragment) %s", infoLog);
+
+		// Handle shader compilation error here.
+		delete[] infoLog;
+		glDeleteShader(vertexShader);
+		glDeleteShader(fragmentShader);
+		return 0;
+	}
+
+	// Create and link the shader program.
+	shaderProgram = glCreateProgram();
+	glAttachShader(shaderProgram, vertexShader);
+	glAttachShader(shaderProgram, fragmentShader);
+	glLinkProgram(shaderProgram);
+
+	// Check the program linking status.
+	GLint linkStatus;
+	glGetProgramiv(shaderProgram, GL_LINK_STATUS, &linkStatus);
+	if (linkStatus != GL_TRUE) {
+		GLint infoLogLength;
+		glGetProgramiv(shaderProgram, GL_INFO_LOG_LENGTH, &infoLogLength);
+		char* infoLog = new char[infoLogLength + 1];
+		glGetProgramInfoLog(shaderProgram, infoLogLength, NULL, infoLog);
+
+		LOGI("Gears:: %s", infoLog);
+
+		// Handle program linking error here.
+		delete[] infoLog;
+		glDeleteShader(vertexShader);
+		glDeleteShader(fragmentShader);
+		glDeleteProgram(shaderProgram);
+		return 0;
+	}
+
+	// Clean up individual shaders (they are no longer needed).
+	glDeleteShader(vertexShader);
+	glDeleteShader(fragmentShader);
+
+	return shaderProgram;
+}
+
 GLenum getGlTextureType(int type)
 {
 	switch (type)
@@ -147,12 +268,12 @@ void createDefaultFramebuffer()
 	glDrawBuffers(1, attachments);
 }
 
-extern "C" void createTexture(uint32_t uniqueId, int textureType, int width, int height, uint8_t* bytes)
+extern "C" void createTexture(uint32_t uniqueId, int textureType, int width, int height, int mipCount, uint8_t* bytes)
 {
 	LOGI("Gears:: Start pushing fn to queue");
 	std::lock_guard<std::mutex> guard(mDefaultMutex);
 
-	auto fn = [&, uniqueId, textureType, width, height, bytes]()
+	auto fn = [&, uniqueId, textureType, width, height, mipCount, bytes]()
 	{
 		if (rdoc_api) rdoc_api->StartFrameCapture(NULL, NULL);
 
@@ -165,9 +286,18 @@ extern "C" void createTexture(uint32_t uniqueId, int textureType, int width, int
 
 		GL();
 		LOGI("Gears::w: %d h: %d", width, height);
-		glTexStorage2D(GL_TEXTURE_2D, 1, getGlTextureType(textureType), width, height);
+
+		LOGI("Gears:: suggested mip level is: %d", mipCount);
+
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_R, GL_CLAMP_TO_EDGE);
+
 		GL();
 
+		glTexStorage2D(GL_TEXTURE_2D, mipCount, getGlTextureType(textureType), width, height);
 		auto type = getGlTextureType(textureType);
 		auto imageSize = 0;
 
@@ -180,16 +310,51 @@ extern "C" void createTexture(uint32_t uniqueId, int textureType, int width, int
 		{
 			glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, width, height, getGlTextureFormat(textureType), GL_UNSIGNED_BYTE, bytes);
 		}		
+
+		// Convert texture ===
+
+		glUseProgram(mShaderProg);
+		glBindFramebuffer(GL_FRAMEBUFFER, mFb);
+
+		GLuint destinationTexture; GL();
+		glGenTextures(1, &destinationTexture); GL();
+		glBindTexture(GL_TEXTURE_2D, destinationTexture); GL();
+
+		glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, width, height, 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr); GL();
+		glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, destinationTexture, 0); GL();
+		glViewport(0, 0, width, height);
+
+		auto status = glCheckFramebufferStatus(GL_FRAMEBUFFER);
+
+		switch (status)
+		{
+		case GL_FRAMEBUFFER_UNDEFINED: LOGI("Gears:: Error - GL_FRAMEBUFFER_UNDEFINED"); break;
+		case GL_FRAMEBUFFER_INCOMPLETE_ATTACHMENT: LOGI("Gears:: Error - GL_FRAMEBUFFER_INCOMPLETE_ATTACHMENT"); break;
+		case GL_FRAMEBUFFER_INCOMPLETE_MISSING_ATTACHMENT: LOGI("Gears:: Error - GL_FRAMEBUFFER_INCOMPLETE_MISSING_ATTACHMENT"); break;
+		case GL_FRAMEBUFFER_UNSUPPORTED: LOGI("Gears:: Error - GL_FRAMEBUFFER_UNSUPPORTED"); break;
+		case GL_FRAMEBUFFER_INCOMPLETE_MULTISAMPLE: LOGI("Gears:: Error - GL_FRAMEBUFFER_INCOMPLETE_MULTISAMPLE"); break;
+		case GL_FRAMEBUFFER_COMPLETE: LOGI("Gears:: Framebuffer complete"); break;
+		default: LOGI("Gears Error:: Uknown Framebuffer error"); break;
+		}
+
+		glBindTexture(GL_TEXTURE_2D, texture);
+		GLint baseImageLoc = glGetUniformLocation(mShaderProg, "sourceTex");
+		glUniform1i(baseImageLoc, 0);
+		glActiveTexture(GL_TEXTURE0);
+
+		glDrawArrays(GL_TRIANGLES, 0, 6); GL();
+		glDeleteTextures(1, &texture); GL();
+		texture = destinationTexture;
+		glBindTexture(GL_TEXTURE_2D, texture);
+
+		// ===================
 		
 		GL();
-		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_R, GL_CLAMP_TO_EDGE);
-		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_BASE_LEVEL, 0);
-		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAX_LEVEL, 0);
-	
+
+		glGenerateMipmap(GL_TEXTURE_2D);
+
+		GL();
+
 		GL();
 		glBindTexture(GL_TEXTURE_2D, 0);
 
@@ -256,6 +421,7 @@ extern "C" void startGearEngine()
 		initEgl();
 		loadRenderDoc();
 		createDefaultFramebuffer();
+		mShaderProg = createShaderProgram(vertexSource, fragmentSource);
 
 		LOGI("Gears:: Starting loop");
 
