@@ -37,7 +37,7 @@ void main()
 }
 )";
 
-const char* fragmentSource = R"(
+const char* fragmentSourceRgb = R"(
 #version 320 es
 precision mediump float;
 
@@ -54,6 +54,22 @@ void main()
 }
 )";
 
+const char* fragmentSource = R"(
+#version 320 es
+precision mediump float;
+
+uniform sampler2D sourceTex;
+
+in vec2 uv;
+out vec4 color;
+
+void main() 
+{
+	vec4 img = texture(sourceTex, uv);
+    color = img;
+}
+)";
+
 struct Resource
 {
 	uint32_t id;
@@ -61,6 +77,7 @@ struct Resource
 };
 
 GLuint						   mFb;
+GLuint						   mShaderProgRgb;
 GLuint						   mShaderProg;
 EGLContext					   mUnityContext;
 std::mutex					   mDefaultMutex;
@@ -238,9 +255,11 @@ GLenum getGlTextureType(int type)
 	switch (type)
 	{
 		case 8:   return GL_RGBA8;
+		case 119: return GL_COMPRESSED_SRGB8_ETC2;    //Unity: RGB_ETC2_SRGB
+		case 123: return GL_COMPRESSED_SRGB8_ALPHA8_ETC2_EAC;//Unity: RGBA_ETC2_SRGB
 		case 129: return GL_COMPRESSED_RGBA_ASTC_4x4; //Unity: RGBA_ASTC4X4_SRGB
 		case 130: return GL_COMPRESSED_RGBA_ASTC_4x4; //Unity: RGBA_ASTC4X4_UNorm
-		default: LOGI("Gears:: Texture format is not implmented in library"); return GL_RGBA8;
+		default: LOGI("Gears:: Texture format (%d) is not implmented in library", type); return GL_RGBA8;
 	};
 }
 
@@ -249,9 +268,38 @@ GLenum getGlTextureFormat(int type)
 	switch (type)
 	{
 		case 8:   return GL_RGBA;
+		case 119: return GL_RGB;  //Unity: RGB_ETC2_SRGB
+		case 123: return GL_RGBA; //Unity: RGBA_ETC2_SRGB
 		case 129: return GL_RGBA; //Unity: RGBA_ASTC4X4_SRGB
 		case 130: return GL_RGBA; //Unity: RGBA_ASTC4X4_UNorm
-		default: LOGI("Gears:: Texture format is not implmented in library"); return GL_RGBA;
+		default: LOGI("Gears:: Texture format (%d) is not implmented in library", type); return GL_RGBA;
+	};
+}
+
+int getImageSize(int type, int width, int height)
+{
+	switch (type)
+	{
+		case 119: return ceil(width / 4.0f) * ceil(height / 4.0f) * 8.0f;   //Unity: RGB_ETC2_SRGB
+		case 123: return ceil(width / 4.0f) * ceil(height / 4.0f) * 16.0f;//Unity: RGBA_ETC2_SRGB
+		case 129: return ceil(width / 4.0f) * ceil(height / 4.0f) * 16.0f; //Unity: RGBA_ASTC4X4_SRGB
+		case 130: return ceil(width / 4.0f) * ceil(height / 4.0f) * 16.0f; //Unity: RGBA_ASTC4X4_UNorm
+		default: 
+			LOGI("Gears:: Texture format (%d) is not implmented in library", type); 
+			return ceil(width / 4.0f) * ceil(height / 4.0f) * 16.0f;
+	};
+}
+
+GLuint getRequiredShaderProg(int type)
+{
+	switch (type)
+	{
+		case 8:   return mShaderProgRgb;
+		case 119: return mShaderProg;  //Unity: RGB_ETC2_SRGB
+		case 123: return mShaderProg; //Unity: RGBA_ETC2_SRGB
+		case 129: return mShaderProgRgb; //Unity: RGBA_ASTC4X4_SRGB
+		case 130: return mShaderProgRgb; //Unity: RGBA_ASTC4X4_UNorm
+		default: LOGI("Gears:: Texture format (%d) is not implmented in library", type); return mShaderProgRgb;
 	};
 }
 
@@ -301,10 +349,10 @@ extern "C" void createTexture(uint32_t uniqueId, int textureType, int width, int
 		auto type = getGlTextureType(textureType);
 		auto imageSize = 0;
 
-		if (type == GL_COMPRESSED_RGBA_ASTC_4x4)
+		if (type != GL_RGBA8)
 		{
-			imageSize = ceil(width / 4.0f) * ceil(height / 4.0f) * 16.0f;
-			glCompressedTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, width, height, GL_COMPRESSED_RGBA_ASTC_4x4, imageSize, bytes);
+			imageSize = getImageSize(textureType, width, height);
+			glCompressedTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, width, height, type, imageSize, bytes);
 		}
 		else
 		{
@@ -313,12 +361,19 @@ extern "C" void createTexture(uint32_t uniqueId, int textureType, int width, int
 
 		// Convert texture ===
 
-		glUseProgram(mShaderProg);
+		glUseProgram(getRequiredShaderProg(textureType));
+		
 		glBindFramebuffer(GL_FRAMEBUFFER, mFb);
 
 		GLuint destinationTexture; GL();
 		glGenTextures(1, &destinationTexture); GL();
 		glBindTexture(GL_TEXTURE_2D, destinationTexture); GL();
+
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_R, GL_CLAMP_TO_EDGE);
 
 		glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, width, height, 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr); GL();
 		glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, destinationTexture, 0); GL();
@@ -338,7 +393,7 @@ extern "C" void createTexture(uint32_t uniqueId, int textureType, int width, int
 		}
 
 		glBindTexture(GL_TEXTURE_2D, texture);
-		GLint baseImageLoc = glGetUniformLocation(mShaderProg, "sourceTex");
+		GLint baseImageLoc = glGetUniformLocation(getRequiredShaderProg(textureType), "sourceTex");
 		glUniform1i(baseImageLoc, 0);
 		glActiveTexture(GL_TEXTURE0);
 
@@ -383,6 +438,11 @@ extern "C" void createTexture(uint32_t uniqueId, int textureType, int width, int
 	mEventQueue.push(fn);
 }
 
+extern "C" void deleteTexture(int index)
+{
+	glDeleteTextures(1, &((mResultArray + index)->textureId));
+}
+
 extern "C" void lockMutex() noexcept
 {
 	mDefaultMutex.lock();
@@ -414,13 +474,14 @@ extern "C" void startGearEngine()
 
 	mUnityContext = context;
 
-	auto thread = std::thread([]()
+	auto thread = std::thread([]() noexcept
 	{
 		LOGI("Gears:: Starting thread");
 
 		initEgl();
 		loadRenderDoc();
 		createDefaultFramebuffer();
+		mShaderProgRgb = createShaderProgram(vertexSource, fragmentSourceRgb);
 		mShaderProg = createShaderProgram(vertexSource, fragmentSource);
 
 		LOGI("Gears:: Starting loop");
@@ -429,7 +490,7 @@ extern "C" void startGearEngine()
 		{
 			while (true)
 			{
-				std::this_thread::sleep_for(1s);
+				std::this_thread::sleep_for(1000ms);
 
 				std::lock_guard<std::mutex> guard(mDefaultMutex);
 
