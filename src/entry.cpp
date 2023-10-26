@@ -13,7 +13,7 @@
 #include <IUnityInterface.h>
 #include <IUnityGraphics.h>
 
-#define GL() LOGI("Gears:: GL_CHECK at line %d = %d", __LINE__ , glGetError());
+#define GL() /*LOGI("GearsNative:: GL_CHECK at line %d = %d", __LINE__ , glGetError());*/
 
 const char* vertexSource = R"(
 #version 320 es
@@ -98,7 +98,7 @@ void loadRenderDoc()
 		pRENDERDOC_GetAPI RENDERDOC_GetAPI = (pRENDERDOC_GetAPI)dlsym(mod, "RENDERDOC_GetAPI");
 		int ret = RENDERDOC_GetAPI(eRENDERDOC_API_Version_1_1_2, (void**)&rdoc_api);
 
-		if(ret != 1) LOGI("Gears:: Error, renderdoc not loaded");
+		if(ret != 1) LOGI("GearsNative:: Error, renderdoc not loaded");
 	}
 }
 
@@ -108,7 +108,7 @@ void initEgl()
 
 	if (display == EGL_NO_DISPLAY)
 	{
-		LOGI("Gears:: No display found");
+		LOGI("GearsNative:: No display found");
 		return;
 	}
 
@@ -122,12 +122,12 @@ void initEgl()
 
 	if (eglInitialize(display, nullptr, nullptr) != EGL_TRUE)
 	{
-		LOGI("Gears:: Error when initializing egl");
+		LOGI("GearsNative:: Error when initializing egl");
 	}
 
 	if (!eglChooseConfig(display, eglConfigAttribs, &eglConfig, 1, &numConfigs))
 	{
-		LOGI("Gears:: Problem when choosing config");
+		LOGI("GearsNative:: Problem when choosing config");
 		return;
 	}
 
@@ -140,7 +140,7 @@ void initEgl()
 
 	if (context == EGL_NO_CONTEXT)
 	{
-		LOGI("Gears:: Problem creating context");
+		LOGI("GearsNative:: Problem creating context");
 		return;
 	}
 
@@ -155,24 +155,24 @@ void initEgl()
 
 	if (surface == EGL_NO_SURFACE)
 	{
-		LOGI("Gears:: Problem creating surface");
+		LOGI("GearsNative:: Problem creating surface");
 		return;
 	}
 
 	if (eglMakeCurrent(display, surface, surface, context))
 	{
-		LOGI("Gears:: Context made successfully and set to current");
+		LOGI("GearsNative:: Context made successfully and set to current");
 	}
 	else
 	{
-		LOGI("Gears:: Problem when trying to make current");
+		LOGI("GearsNative:: Problem when trying to make current");
 	}
 }
 
 GLuint createShaderProgram(const char* vertexSource, const char* fragmentSource) {
 	GLuint vertexShader, fragmentShader, shaderProgram;
 
-	LOGI("Gears:: Creating shaders");
+	LOGI("GearsNative:: Creating shaders");
 
 	// Create and compile the vertex shader.
 	vertexShader = glCreateShader(GL_VERTEX_SHADER);
@@ -188,7 +188,7 @@ GLuint createShaderProgram(const char* vertexSource, const char* fragmentSource)
 		char* infoLog = new char[infoLogLength + 1];
 		glGetShaderInfoLog(vertexShader, infoLogLength, NULL, infoLog);
 
-		LOGI("Gears::(vertex) %s", infoLog);
+		LOGI("GearsNative::(vertex) %s", infoLog);
 
 		// Handle shader compilation error here.
 		delete[] infoLog;
@@ -209,7 +209,7 @@ GLuint createShaderProgram(const char* vertexSource, const char* fragmentSource)
 		char* infoLog = new char[infoLogLength + 1];
 		glGetShaderInfoLog(fragmentShader, infoLogLength, NULL, infoLog);
 
-		LOGI("Gears::(fragment) %s", infoLog);
+		LOGI("GearsNative::(fragment) %s", infoLog);
 
 		// Handle shader compilation error here.
 		delete[] infoLog;
@@ -233,7 +233,7 @@ GLuint createShaderProgram(const char* vertexSource, const char* fragmentSource)
 		char* infoLog = new char[infoLogLength + 1];
 		glGetProgramInfoLog(shaderProgram, infoLogLength, NULL, infoLog);
 
-		LOGI("Gears:: %s", infoLog);
+		LOGI("GearsNative:: %s", infoLog);
 
 		// Handle program linking error here.
 		delete[] infoLog;
@@ -259,7 +259,7 @@ GLenum getGlTextureType(int type)
 		case 123: return GL_COMPRESSED_SRGB8_ALPHA8_ETC2_EAC;//Unity: RGBA_ETC2_SRGB
 		case 129: return GL_COMPRESSED_RGBA_ASTC_4x4; //Unity: RGBA_ASTC4X4_SRGB
 		case 130: return GL_COMPRESSED_RGBA_ASTC_4x4; //Unity: RGBA_ASTC4X4_UNorm
-		default: LOGI("Gears:: Texture format (%d) is not implmented in library", type); return GL_RGBA8;
+		default: LOGI("GearsNative:: Texture format (%d) is not implmented in library", type); return GL_RGBA8;
 	};
 }
 
@@ -272,7 +272,7 @@ GLenum getGlTextureFormat(int type)
 		case 123: return GL_RGBA; //Unity: RGBA_ETC2_SRGB
 		case 129: return GL_RGBA; //Unity: RGBA_ASTC4X4_SRGB
 		case 130: return GL_RGBA; //Unity: RGBA_ASTC4X4_UNorm
-		default: LOGI("Gears:: Texture format (%d) is not implmented in library", type); return GL_RGBA;
+		default: LOGI("GearsNative:: Texture format (%d) is not implmented in library", type); return GL_RGBA;
 	};
 }
 
@@ -281,11 +281,11 @@ int getImageSize(int type, int width, int height)
 	switch (type)
 	{
 		case 119: return ceil(width / 4.0f) * ceil(height / 4.0f) * 8.0f;   //Unity: RGB_ETC2_SRGB
-		case 123: return ceil(width / 4.0f) * ceil(height / 4.0f) * 16.0f;//Unity: RGBA_ETC2_SRGB
+		case 123: return ceil(width / 4.0f) * ceil(height / 4.0f) * 16.0f; //Unity: RGBA_ETC2_SRGB
 		case 129: return ceil(width / 4.0f) * ceil(height / 4.0f) * 16.0f; //Unity: RGBA_ASTC4X4_SRGB
 		case 130: return ceil(width / 4.0f) * ceil(height / 4.0f) * 16.0f; //Unity: RGBA_ASTC4X4_UNorm
 		default: 
-			LOGI("Gears:: Texture format (%d) is not implmented in library", type); 
+			LOGI("GearsNative:: Texture format (%d) is not implmented in library", type); 
 			return ceil(width / 4.0f) * ceil(height / 4.0f) * 16.0f;
 	};
 }
@@ -299,7 +299,7 @@ GLuint getRequiredShaderProg(int type)
 		case 123: return mShaderProg; //Unity: RGBA_ETC2_SRGB
 		case 129: return mShaderProgRgb; //Unity: RGBA_ASTC4X4_SRGB
 		case 130: return mShaderProgRgb; //Unity: RGBA_ASTC4X4_UNorm
-		default: LOGI("Gears:: Texture format (%d) is not implmented in library", type); return mShaderProgRgb;
+		default: LOGI("GearsNative:: Texture format (%d) is not implmented in library", type); return mShaderProgRgb;
 	};
 }
 
@@ -318,7 +318,7 @@ void createDefaultFramebuffer()
 
 extern "C" void createTexture(uint32_t uniqueId, int textureType, int width, int height, int mipCount, uint8_t* bytes)
 {
-	LOGI("Gears:: Start pushing fn to queue");
+	//LOGI("GearsNative:: Start pushing fn to queue");
 	std::lock_guard<std::mutex> guard(mDefaultMutex);
 
 	auto fn = [&, uniqueId, textureType, width, height, mipCount, bytes]()
@@ -333,9 +333,9 @@ extern "C" void createTexture(uint32_t uniqueId, int textureType, int width, int
 		glBindTexture(GL_TEXTURE_2D, texture);
 
 		GL();
-		LOGI("Gears::w: %d h: %d", width, height);
+		//LOGI("GearsNative::w: %d h: %d", width, height);
 
-		LOGI("Gears:: suggested mip level is: %d", mipCount);
+		//LOGI("GearsNative:: suggested mip level is: %d", mipCount);
 
 		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
 		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
@@ -379,18 +379,18 @@ extern "C" void createTexture(uint32_t uniqueId, int textureType, int width, int
 		glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, destinationTexture, 0); GL();
 		glViewport(0, 0, width, height);
 
-		auto status = glCheckFramebufferStatus(GL_FRAMEBUFFER);
+		//auto status = glCheckFramebufferStatus(GL_FRAMEBUFFER);
 
-		switch (status)
-		{
-		case GL_FRAMEBUFFER_UNDEFINED: LOGI("Gears:: Error - GL_FRAMEBUFFER_UNDEFINED"); break;
-		case GL_FRAMEBUFFER_INCOMPLETE_ATTACHMENT: LOGI("Gears:: Error - GL_FRAMEBUFFER_INCOMPLETE_ATTACHMENT"); break;
-		case GL_FRAMEBUFFER_INCOMPLETE_MISSING_ATTACHMENT: LOGI("Gears:: Error - GL_FRAMEBUFFER_INCOMPLETE_MISSING_ATTACHMENT"); break;
-		case GL_FRAMEBUFFER_UNSUPPORTED: LOGI("Gears:: Error - GL_FRAMEBUFFER_UNSUPPORTED"); break;
-		case GL_FRAMEBUFFER_INCOMPLETE_MULTISAMPLE: LOGI("Gears:: Error - GL_FRAMEBUFFER_INCOMPLETE_MULTISAMPLE"); break;
-		case GL_FRAMEBUFFER_COMPLETE: LOGI("Gears:: Framebuffer complete"); break;
-		default: LOGI("Gears Error:: Uknown Framebuffer error"); break;
-		}
+		//switch (status)
+		//{
+		//case GL_FRAMEBUFFER_UNDEFINED: LOGI("GearsNative:: Error - GL_FRAMEBUFFER_UNDEFINED"); break;
+		//case GL_FRAMEBUFFER_INCOMPLETE_ATTACHMENT: LOGI("GearsNative:: Error - GL_FRAMEBUFFER_INCOMPLETE_ATTACHMENT"); break;
+		//case GL_FRAMEBUFFER_INCOMPLETE_MISSING_ATTACHMENT: LOGI("GearsNative:: Error - GL_FRAMEBUFFER_INCOMPLETE_MISSING_ATTACHMENT"); break;
+		//case GL_FRAMEBUFFER_UNSUPPORTED: LOGI("GearsNative:: Error - GL_FRAMEBUFFER_UNSUPPORTED"); break;
+		//case GL_FRAMEBUFFER_INCOMPLETE_MULTISAMPLE: LOGI("GearsNative:: Error - GL_FRAMEBUFFER_INCOMPLETE_MULTISAMPLE"); break;
+		//case GL_FRAMEBUFFER_COMPLETE: LOGI("GearsNative:: Framebuffer complete"); break;
+		//default: LOGI("Gears Error:: Uknown Framebuffer error"); break;
+		//}
 
 		glBindTexture(GL_TEXTURE_2D, texture);
 		GLint baseImageLoc = glGetUniformLocation(getRequiredShaderProg(textureType), "sourceTex");
@@ -417,7 +417,7 @@ extern "C" void createTexture(uint32_t uniqueId, int textureType, int width, int
 
 		glClientWaitSync(fence, 0, GL_TIMEOUT_IGNORED);
 
-		LOGI("Gears:: Texture created with id %d", (int)texture);
+		LOGI("GearsNative:: Texture created with id %d", (int)texture);
 		
 		for (int i = 0; i < mResultArraySize; ++i)
 		{
@@ -434,13 +434,21 @@ extern "C" void createTexture(uint32_t uniqueId, int textureType, int width, int
 		if (rdoc_api) rdoc_api->EndFrameCapture(NULL, NULL);
 	};
 
-	LOGI("Gears:: Pushing fn to queue");
+	//LOGI("GearsNative:: Pushing fn to queue");
 	mEventQueue.push(fn);
 }
 
-extern "C" void deleteTexture(int index)
+extern "C" void deleteTexture(uint32_t index)
 {
-	glDeleteTextures(1, &((mResultArray + index)->textureId));
+	std::lock_guard<std::mutex> guard(mDefaultMutex);
+
+	auto fn = [&, index]()
+	{
+		LOGI("GearsNative:: Deleting texture: %d", index);
+		glDeleteTextures(1, &index);
+	};
+
+	mEventQueue.push(fn);
 }
 
 extern "C" void lockMutex() noexcept
@@ -465,18 +473,18 @@ extern "C" void startGearEngine()
 
 	if (context == EGL_NO_CONTEXT)
 	{
-		LOGI("Gears:: No current context found.");
+		LOGI("GearsNative:: No current context found.");
 	}
 	else
 	{
-		LOGI("Gears:: Context found");
+		LOGI("GearsNative:: Context found");
 	}
 
 	mUnityContext = context;
 
 	auto thread = std::thread([]() noexcept
 	{
-		LOGI("Gears:: Starting thread");
+		LOGI("GearsNative:: Starting thread");
 
 		initEgl();
 		loadRenderDoc();
@@ -484,18 +492,17 @@ extern "C" void startGearEngine()
 		mShaderProgRgb = createShaderProgram(vertexSource, fragmentSourceRgb);
 		mShaderProg = createShaderProgram(vertexSource, fragmentSource);
 
-		LOGI("Gears:: Starting loop");
+		LOGI("GearsNative:: Starting loop");
 
 		try
 		{
 			while (true)
 			{
-				std::this_thread::sleep_for(1000ms);
+				std::this_thread::sleep_for(100ms);
 
 				std::lock_guard<std::mutex> guard(mDefaultMutex);
 
-				LOGI("Gears:: Queue: %d", (int)(mEventQueue.size()));
-				if (!mEventQueue.empty())
+				while (!mEventQueue.empty())
 				{
 					auto& fn = mEventQueue.front();
 
@@ -507,7 +514,7 @@ extern "C" void startGearEngine()
 		}
 		catch (std::exception e)
 		{
-			LOGI("Gears:: %s", e.what());
+			LOGI("GearsNative:: %s", e.what());
 		}
 	});
 
